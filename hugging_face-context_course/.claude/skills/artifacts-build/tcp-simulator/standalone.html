@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TCP/IP Simulator</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--dim:#484f58;
+  --sky:#38bdf8;--emerald:#34d399;--amber:#fbbf24;--rose:#fb7185;
+  --indigo:#818cf8;--pink:#f472b6;
+}
+body{background:var(--bg);color:var(--text);font-family:'Courier New',monospace;padding:16px;min-height:100vh}
+h1{color:var(--sky);font-size:18px;letter-spacing:-.3px}
+.subtitle{color:var(--muted);font-size:11px;margin-top:2px;margin-bottom:16px}
+
+/* Network canvas */
+.canvas{
+  position:relative;background:var(--bg2);border:1px solid var(--border);
+  border-radius:8px;height:148px;overflow:hidden;margin-bottom:16px;user-select:none
+}
+
+/* Nodes */
+.node{
+  position:absolute;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;z-index:10
+}
+.node.client{left:20px}
+.node.server{right:20px}
+.node-icon{
+  width:60px;height:60px;border-radius:10px;border:2px solid var(--border);
+  background:#1c2128;display:flex;align-items:center;justify-content:center;
+  font-size:28px;transition:all .5s
+}
+.node-icon.active-c{border-color:var(--sky);background:#0c1929}
+.node-icon.active-s{border-color:var(--emerald);background:#0a1f16}
+.node-icon.busy{border-color:var(--amber);background:#1c1600}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--dim);transition:all .4s}
+.dot.on{background:var(--emerald)}
+.dot.busy{background:var(--amber);animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.node-label{font-size:11px;color:var(--muted)}
+
+/* Lanes */
+.lane{
+  position:absolute;left:92px;right:92px;height:1px;
+  background:repeating-linear-gradient(90deg,var(--border) 0,var(--border) 6px,transparent 6px,transparent 12px)
+}
+.lane-c2s{top:calc(50% - 18px)}
+.lane-s2c{top:calc(50% + 16px)}
+
+/* Status badge */
+.badge{
+  position:absolute;top:10px;right:10px;
+  font-size:11px;padding:3px 10px;border-radius:999px;font-weight:600;
+  background:#1c2128;color:var(--muted);border:1px solid var(--border);transition:all .4s
+}
+.badge.connecting,.badge.sending,.badge.closing{background:#1c1600;color:#fbbf24;border-color:#92400e}
+.badge.connected{background:#0a1f16;color:var(--emerald);border-color:#065f46}
+
+/* Packets */
+.packet{
+  position:absolute;z-index:20;padding:2px 7px;border-radius:4px;
+  font-size:11px;font-weight:700;white-space:nowrap;cursor:help;
+  border:1px solid transparent;pointer-events:auto;
+  transform:translate(-50%,-50%)
+}
+.pkt-SYN    {background:#0369a1;border-color:#38bdf8;color:#fff}
+.pkt-SYN-ACK{background:#4338ca;border-color:#818cf8;color:#fff}
+.pkt-ACK    {background:#065f46;border-color:#34d399;color:#fff}
+.pkt-DATA   {background:#92400e;border-color:#fbbf24;color:#000}
+.pkt-FIN    {background:#9f1239;border-color:#fb7185;color:#fff}
+.pkt-FIN-ACK{background:#831843;border-color:#f472b6;color:#fff}
+
+/* Layout */
+.body{display:flex;gap:16px}
+.controls{width:220px;flex-shrink:0;display:flex;flex-direction:column;gap:12px}
+.panel{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px}
+.panel-title{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.1em;font-weight:600;margin-bottom:12px}
+
+/* Buttons */
+.btn{
+  width:100%;padding:8px 12px;border-radius:6px;border:none;cursor:pointer;
+  font-family:inherit;font-size:13px;font-weight:600;text-align:left;
+  display:flex;align-items:center;gap:8px;transition:all .2s;margin-bottom:6px;color:#fff
+}
+.btn:disabled{background:#1c2128 !important;color:var(--dim) !important;cursor:not-allowed}
+.btn-connect{background:#0c4a6e}
+.btn-connect:not(:disabled):hover{background:#0369a1}
+.btn-send{background:#78350f}
+.btn-send:not(:disabled):hover{background:#92400e}
+.btn-close{background:#4c0519}
+.btn-close:not(:disabled):hover{background:#9f1239}
+.btn-reset{background:#1c2128;color:var(--muted)}
+.btn-reset:hover{background:#21262d}
+.btn .ml{margin-left:auto;font-size:10px;opacity:.5;font-weight:400}
+
+/* Input */
+.inp{
+  width:100%;padding:8px 10px;background:#0d1117;border:1px solid var(--border);
+  border-radius:6px;color:var(--text);font-family:inherit;font-size:13px;
+  margin-bottom:6px;transition:border-color .2s
+}
+.inp:focus{outline:none;border-color:var(--amber)}
+.inp:disabled{opacity:.35;cursor:not-allowed}
+.inp::placeholder{color:var(--dim)}
+.divider{border-top:1px solid var(--border);margin:8px 0}
+
+/* Legend */
+.legend-item{display:flex;align-items:flex-start;gap:8px;margin-bottom:7px}
+.legend-tag{padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700;flex-shrink:0;margin-top:1px}
+.legend-desc{font-size:11px;color:var(--dim);line-height:1.4}
+
+/* Log */
+.log-panel{flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;display:flex;flex-direction:column}
+.log-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.log-count{font-size:10px;color:var(--dim)}
+.log-scroll{overflow-y:auto;flex:1;max-height:340px;padding-right:4px}
+.log-entry{border-radius:4px;padding:7px 8px;border-left:2px solid var(--border);background:#0d111780;margin-bottom:5px}
+.log-entry.handshake{border-color:#0369a1}
+.log-entry.data{border-color:#92400e}
+.log-entry.closing{border-color:#9f1239}
+.log-entry.success{border-color:#065f46}
+.log-row{display:flex;align-items:baseline;gap:6px;margin-bottom:2px;flex-wrap:wrap}
+.log-ts{font-size:10px;color:var(--dim);flex-shrink:0;font-variant-numeric:tabular-nums}
+.log-tag{padding:1px 4px;border-radius:3px;font-size:9px;font-weight:700;flex-shrink:0}
+.log-msg{font-size:12px;font-weight:600}
+.log-msg.success{color:var(--emerald)}
+.log-explain{font-size:11px;color:var(--muted);line-height:1.4;margin-left:1px}
+.phase-header{font-size:11px;font-weight:700;letter-spacing:.07em;padding-top:10px;margin-top:6px;border-top:1px solid var(--border);margin-bottom:4px}
+.phase-header.handshake{color:var(--sky)}
+.phase-header.data{color:var(--amber)}
+.phase-header.closing{color:var(--rose)}
+.empty{text-align:center;padding:48px 0;color:var(--dim)}
+.empty-icon{font-size:36px;margin-bottom:10px}
+
+footer{text-align:center;font-size:10px;color:var(--dim);margin-top:12px}
+</style>
+</head>
+<body>
+
+<h1>TCP/IP Simulator</h1>
+<p class="subtitle">protocolo de comunicação que alimenta a internet</p>
+
+<!-- Network canvas -->
+<div class="canvas" id="canvas">
+  <div class="node client">
+    <div class="node-icon" id="icon-client">💻</div>
+    <div class="dot" id="dot-client"></div>
+    <span class="node-label">Cliente</span>
+  </div>
+  <div class="node server">
+    <div class="node-icon" id="icon-server">🖥️</div>
+    <div class="dot" id="dot-server"></div>
+    <span class="node-label">Servidor</span>
+  </div>
+  <div class="lane lane-c2s"></div>
+  <div class="lane lane-s2c"></div>
+  <span class="badge" id="badge">Desconectado</span>
+</div>
+
+<!-- Body -->
+<div class="body">
+  <!-- Controls -->
+  <div class="controls">
+    <div class="panel">
+      <div class="panel-title">Controles</div>
+      <button class="btn btn-connect" id="btn-connect" onclick="handleConnect()">
+        <span>🔗</span><span>Conectar</span><span class="ml">SYN</span>
+      </button>
+      <div class="divider"></div>
+      <input class="inp" id="msg-input" placeholder="Digite uma mensagem…" maxlength="60"
+             onkeydown="if(event.key==='Enter') handleSend()" disabled />
+      <button class="btn btn-send" id="btn-send" onclick="handleSend()" disabled>
+        <span>📤</span><span>Enviar Mensagem</span>
+      </button>
+      <div class="divider"></div>
+      <button class="btn btn-close" id="btn-close" onclick="handleClose()" disabled>
+        <span>✕</span><span>Encerrar Conexão</span><span class="ml">FIN</span>
+      </button>
+      <button class="btn btn-reset" onclick="handleReset()">
+        <span>↺</span><span>Reiniciar</span>
+      </button>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Tipos de Pacote</div>
+      <div id="legend"></div>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="log-panel">
+    <div class="log-header">
+      <div class="panel-title" style="margin:0">Log de Eventos</div>
+      <span class="log-count" id="log-count">0 eventos</span>
+    </div>
+    <div class="log-scroll" id="log-scroll">
+      <div class="empty">
+        <div class="empty-icon">📡</div>
+        <div>Clique em <b>Conectar</b> para começar</div>
+        <div style="font-size:11px;margin-top:4px">e veja o TCP em ação, passo a passo</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>Passe o mouse nos pacotes para ver o que significam · Enter envia a mensagem</footer>
+
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+
+const PKT_DUR  = 1100  // ms to cross the wire
+const STEP_DLY = 1350  // ms between steps
+
+const PKTS = {
+  'SYN':     {cls:'pkt-SYN',     tip:'Synchronize — O cliente pede para abrir a conexão. "Posso me conectar a você?"'},
+  'SYN-ACK': {cls:'pkt-SYN-ACK', tip:'Synchronize-Acknowledge — O servidor aceita e também pede confirmação de volta.'},
+  'ACK':     {cls:'pkt-ACK',     tip:'Acknowledge — "Recebi sua mensagem." Confirma que o pacote anterior chegou.'},
+  'DATA':    {cls:'pkt-DATA',    tip:'Dados do usuário empacotados em um segmento TCP com número de sequência e checksum.'},
+  'FIN':     {cls:'pkt-FIN',     tip:'Finish — "Não tenho mais dados." Inicia o encerramento ordenado da conexão.'},
+  'FIN-ACK': {cls:'pkt-FIN-ACK', tip:'Finish-Acknowledge — O servidor confirma o encerramento e também encerra seu lado.'},
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
+let state = 'disconnected' // disconnected | connecting | connected | sending | closing
+let logCount = 0
+let rafId = null
+
+// ─── DOM refs ─────────────────────────────────────────────────────────────────
+
+const canvas    = document.getElementById('canvas')
+const iconC     = document.getElementById('icon-client')
+const iconS     = document.getElementById('icon-server')
+const dotC      = document.getElementById('dot-client')
+const dotS      = document.getElementById('dot-server')
+const badge     = document.getElementById('badge')
+const btnConn   = document.getElementById('btn-connect')
+const btnSend   = document.getElementById('btn-send')
+const btnClose  = document.getElementById('btn-close')
+const msgInput  = document.getElementById('msg-input')
+const logScroll = document.getElementById('log-scroll')
+const logCountEl= document.getElementById('log-count')
+
+// ─── Legend ───────────────────────────────────────────────────────────────────
+
+const legendEl = document.getElementById('legend')
+const LEGEND_COLORS = {
+  'SYN':'#0369a1','SYN-ACK':'#4338ca','ACK':'#065f46',
+  'DATA':'#92400e','FIN':'#9f1239','FIN-ACK':'#831843'
+}
+Object.entries(PKTS).forEach(([k,v]) => {
+  legendEl.innerHTML += `
+    <div class="legend-item">
+      <span class="legend-tag" style="background:${LEGEND_COLORS[k]};color:${k==='DATA'?'#000':'#fff'}">${k}</span>
+      <span class="legend-desc">${v.tip.split(' — ')[0]}</span>
+    </div>`
+})
+
+// ─── Packet animation ─────────────────────────────────────────────────────────
+
+const livePackets = [] // {el, startTime, duration, direction}
+
+function launchPacket(type, direction, label) {
+  const el = document.createElement('div')
+  el.className = `packet ${PKTS[type].cls}`
+  el.title = PKTS[type].tip
+  el.textContent = label || type
+  // c2s => top lane (50% - 18px), s2c => bottom lane (50% + 16px)
+  el.style.top = direction === 'c2s' ? 'calc(50% - 18px)' : 'calc(50% + 16px)'
+  el.style.left = direction === 'c2s' ? '14%' : '86%'
+  canvas.appendChild(el)
+  livePackets.push({el, startTime: performance.now(), duration: PKT_DUR, direction})
+}
+
+function animatePackets(ts) {
+  for (let i = livePackets.length - 1; i >= 0; i--) {
+    const p = livePackets[i]
+    const progress = Math.min((ts - p.startTime) / p.duration, 1)
+    const pct = p.direction === 'c2s' ? 14 + progress * 72 : 86 - progress * 72
+    p.el.style.left = pct + '%'
+    if (progress >= 1.2) {
+      p.el.remove()
+      livePackets.splice(i, 1)
+    }
+  }
+  rafId = requestAnimationFrame(animatePackets)
+}
+rafId = requestAnimationFrame(animatePackets)
+
+// ─── UI updates ───────────────────────────────────────────────────────────────
+
+function setUIState(s) {
+  state = s
+  const isBusy = ['connecting','sending','closing'].includes(s)
+
+  // Node icons
+  iconC.className = 'node-icon' + (s==='disconnected' ? '' : isBusy ? ' busy' : ' active-c')
+  iconS.className = 'node-icon' + (s==='disconnected' ? '' : isBusy ? ' busy' : ' active-s')
+  dotC.className = dotS.className = 'dot' + (s==='disconnected' ? '' : isBusy ? ' busy' : ' on')
+
+  // Badge
+  const labels = {disconnected:'Desconectado',connecting:'Conectando…',connected:'Conectado',sending:'Enviando…',closing:'Encerrando…'}
+  badge.textContent = labels[s]
+  badge.className = 'badge ' + s
+
+  // Buttons & input
+  btnConn.disabled  = s !== 'disconnected'
+  btnSend.disabled  = s !== 'connected'
+  btnClose.disabled = s !== 'connected'
+  msgInput.disabled = s !== 'connected'
+}
+
+// ─── Log ──────────────────────────────────────────────────────────────────────
+
+const PHASE_CLASSES = {handshake:'handshake',data:'data',closing:'closing'}
+
+function addPhaseHeader(phase) {
+  const labels = {handshake:'FASE 1 — Three-Way Handshake',data:'FASE 2 — Transferência de Dados',closing:'FASE 3 — Encerramento'}
+  const div = document.createElement('div')
+  div.className = 'phase-header ' + phase
+  div.textContent = labels[phase]
+  logScroll.appendChild(div)
+}
+
+function addLog(msg, explain, type, phase) {
+  if (logCount === 0) logScroll.innerHTML = ''
+  logCount++
+  logCountEl.textContent = logCount + ' evento' + (logCount !== 1 ? 's' : '')
+
+  const ts = new Date().toLocaleTimeString('pt-BR',{hour12:false})
+  const isSuccess = msg.startsWith('✓')
+  const ph = PHASE_CLASSES[phase] || ''
+
+  const entry = document.createElement('div')
+  entry.className = 'log-entry ' + (isSuccess ? 'success' : ph)
+
+  let tagHtml = ''
+  if (type !== 'info') {
+    const tc = {SYN:'#0369a1','SYN-ACK':'#4338ca',ACK:'#065f46',DATA:'#92400e',FIN:'#9f1239','FIN-ACK':'#831843'}
+    tagHtml = `<span class="log-tag" style="background:${tc[type]};color:${type==='DATA'?'#000':'#fff'}">${type}</span>`
+  }
+
+  entry.innerHTML = `
+    <div class="log-row">
+      <span class="log-ts">${ts}</span>
+      ${tagHtml}
+      <span class="log-msg${isSuccess?' success':''}">${msg}</span>
+    </div>
+    <div class="log-explain">${explain}</div>`
+
+  logScroll.appendChild(entry)
+  logScroll.scrollTop = logScroll.scrollHeight
+}
+
+// ─── Simulation ───────────────────────────────────────────────────────────────
+
+const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+async function handleConnect() {
+  if (state !== 'disconnected') return
+  setUIState('connecting')
+  addPhaseHeader('handshake')
+  await sleep(300)
+
+  launchPacket('SYN','c2s')
+  addLog('→ Cliente  →  SYN',
+    'O cliente pede para se conectar. SYN = "Synchronize" — como dizer: "Posso me conectar? Meu número inicial é X."',
+    'SYN','handshake')
+  await sleep(STEP_DLY)
+
+  launchPacket('SYN-ACK','s2c')
+  addLog('← Servidor  ←  SYN-ACK',
+    'O servidor diz "sim!" e também envia seu próprio número inicial. É uma confirmação dupla.',
+    'SYN-ACK','handshake')
+  await sleep(STEP_DLY)
+
+  launchPacket('ACK','c2s')
+  addLog('→ Cliente  →  ACK',
+    '"Recebi o seu SYN-ACK, obrigado!" O handshake está completo.',
+    'ACK','handshake')
+  await sleep(STEP_DLY)
+
+  addLog('✓ Conexão TCP estabelecida',
+    'Os dois lados sincronizaram números de sequência. Dados enviados serão confirmados e entregues em ordem.',
+    'info','handshake')
+  setUIState('connected')
+}
+
+async function handleSend() {
+  const msg = msgInput.value.trim()
+  if (state !== 'connected' || !msg) return
+  msgInput.value = ''
+  setUIState('sending')
+  addPhaseHeader('data')
+  await sleep(300)
+
+  const short = msg.length > 16 ? msg.slice(0,14) + '…' : msg
+  launchPacket('DATA','c2s',`DATA: "${short}"`)
+  addLog(`→ Cliente  →  DATA: "${msg}"`,
+    'O dado é encapsulado num segmento TCP com: número de sequência, checksum de integridade e porta de destino.',
+    'DATA','data')
+  await sleep(STEP_DLY)
+
+  launchPacket('ACK','s2c')
+  addLog('← Servidor  ←  ACK',
+    'O servidor confirmou que recebeu os dados! Sem esse ACK, o cliente reenviaria automaticamente.',
+    'ACK','data')
+  await sleep(STEP_DLY)
+
+  addLog('✓ Mensagem entregue com confiabilidade',
+    'Vantagem do TCP sobre UDP: garante entrega, ordem correta e integridade dos dados.',
+    'info','data')
+  setUIState('connected')
+}
+
+async function handleClose() {
+  if (state !== 'connected') return
+  setUIState('closing')
+  addPhaseHeader('closing')
+  await sleep(300)
+
+  launchPacket('FIN','c2s')
+  addLog('→ Cliente  →  FIN',
+    '"Não tenho mais dados para enviar." FIN = Finish. O cliente encerra sua metade da conexão.',
+    'FIN','closing')
+  await sleep(STEP_DLY)
+
+  launchPacket('FIN-ACK','s2c')
+  addLog('← Servidor  ←  FIN-ACK',
+    '"Entendido, e eu também encerro minha parte." O servidor confirma e fecha seu lado.',
+    'FIN-ACK','closing')
+  await sleep(STEP_DLY)
+
+  launchPacket('ACK','c2s')
+  addLog('→ Cliente  →  ACK (final)',
+    '"Confirmado, pode fechar!" O cliente entra em TIME_WAIT por 2 MSL para garantir que o ACK chegou.',
+    'ACK','closing')
+  await sleep(STEP_DLY)
+
+  addLog('✓ Conexão encerrada — soquete liberado',
+    'Todos os recursos de memória e porta foram liberados. Um novo handshake seria necessário para recomeçar.',
+    'info','closing')
+  setUIState('disconnected')
+}
+
+function handleReset() {
+  if (['connecting','sending','closing'].includes(state)) return
+  livePackets.forEach(p => p.el.remove())
+  livePackets.length = 0
+  logCount = 0
+  logScroll.innerHTML = `
+    <div class="empty">
+      <div class="empty-icon">📡</div>
+      <div>Clique em <b>Conectar</b> para começar</div>
+      <div style="font-size:11px;margin-top:4px">e veja o TCP em ação, passo a passo</div>
+    </div>`
+  logCountEl.textContent = '0 eventos'
+  setUIState('disconnected')
+}
+</script>
+</body>
+</html>
